@@ -54,9 +54,9 @@ Objectives:
 
 | Model                       | Mode      | Accuracy(%) | INVALID_COUNT | Completion Tokens(Avg) |
 | --------------------------- | --------- | ----------- | ------------- | ---------------------- |
-| DeepSeek-R1-Distill-Qwen-7B | Think     | 73.16       | 0             | 747.55                 |
-| DeepSeek-R1-Distill-Qwen-7B | ThinkOver | 76.27       | 1             | 325.77                 |
-| DeepSeek-R1-Distill-Qwen-7B | NotThink  | 79.53       | 2             | 300.21                 |
+| DeepSeek-R1-Distill-Qwen-7B | Think     | 79.75       | 0             | 959.87                 |
+| DeepSeek-R1-Distill-Qwen-7B | ThinkOver | 76.49       | 2             | 331.80                 |
+| DeepSeek-R1-Distill-Qwen-7B | NotThink  | 79.37       | 3             | 292.79                 |
 
 > Explanation:
 >

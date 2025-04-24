@@ -17,7 +17,6 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-first = True
 deepseek_models = ["deepseek-chat", "deepseek-reasoner"]
 
 categories = ["Think", "ThinkOver", "NotThink"]
@@ -250,6 +249,7 @@ def run_sglang(args, dataset):
                     item[f"{name}-text"] = state[f"{name}-text"]
                     item[name] = state[name]
                     if args.dataset == "gpqa-diamond":
+                        # for gpqa-diamond, we need to save choice text
                         item[f"{name}-choice"] = state[f"{name}-choice"]
                 data.append(item)
 
@@ -383,7 +383,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument(
-        "--max_tokens", type=int, default=2048, help="Max tokens to generate"
+        "--max-tokens", type=int, default=32000, help="Max tokens to generate"
     )
     parser.add_argument("--batch-size", type=int, default=128, help="Batch size")
     parser.add_argument("--tp-size", type=int, default=1, help="TP size")
