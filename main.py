@@ -20,6 +20,9 @@ logging.basicConfig(
 deepseek_models = ["deepseek-chat", "deepseek-reasoner"]
 
 categories = ["Think", "ThinkOver", "NotThink"]
+math_prompt = (
+    "Please reason step by step, and put your final answer within \\boxed\{\}."
+)
 
 
 def get_ds_api_completion_response(item, client, args) -> tuple[str, int]:
