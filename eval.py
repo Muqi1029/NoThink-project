@@ -10,6 +10,7 @@ from typing import Dict, List
 sys.path.append("/wangbenyou/wanlong/SFT/eval")
 import numpy as np
 from utils.grader import check_is_correct
+from utils.parser import extract_answer
 
 from main import categories
 
@@ -19,39 +20,6 @@ class EvalMetric:
     category: str
     pass_at_k: List[List[float]] = field(default_factory=list)
     completion_tokens: List[List[int]] = field(default_factory=list)
-
-
-def extract_answer(s: str) -> str:
-    pred = ""
-    if "boxed" in s:
-        ans = s.split("boxed")[-1]
-        if len(ans) == 0:
-            return ""
-        elif ans[0] == "{":
-            stack = 1
-            a = ""
-            for c in ans[1:]:
-                if c == "{":
-                    stack += 1
-                    a += c
-                elif c == "}":
-                    stack -= 1
-                    if stack == 0:
-                        break
-                    a += c
-                else:
-                    a += c
-        else:
-            a = ans.split("$")[0].strip()
-        pred = a
-
-    pred = re.sub(r"\n\s*", "", pred)
-    if pred != "":
-        if pred[0] == ":":
-            pred = pred[1:]
-        if pred[-1] in "./":
-            pred = pred[:-1]
-    return pred
 
 
 def check_args(dataset, f_path):
@@ -112,10 +80,25 @@ def eval_pass_at_k(
 
         # compute pass@k for each category
         for category, l in result_item["outputs"].items():
+            if dataset_name == "gpqa-diamond":
+                if not category.endswith("-choice"):
+                    continue
+                else:
+                    # remove "-choice" from category for metrics key
+                    category = category.replace("-choice", "")
+
             with ThreadPoolExecutor(max_workers=20) as executor:
-                futures = [
-                    executor.submit(parallel_eval, ground_truth, pred) for pred in l
-                ]
+                if dataset_name == "gpqa-diamond":
+                    futures = [
+                        executor.submit(
+                            lambda x, y: str(x) == str(y), ground_truth, pred
+                        )
+                        for pred in l
+                    ]
+                else:
+                    futures = [
+                        executor.submit(parallel_eval, ground_truth, pred) for pred in l
+                    ]
                 is_correct_results = [future.result() for future in futures]
                 pass_at_k = [compute_pass_at_k(is_correct_results, k) for k in ks]
                 metrics[category].pass_at_k.append(pass_at_k)
