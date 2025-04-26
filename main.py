@@ -232,9 +232,42 @@ def aime_qa(s, item):
 
 
 @function(num_api_spec_tokens=128)
-def sgl_hack_deepseek_r1(s, q):
+def sgl_hack_deepseek_r1(s, q, mode, choices=None):
     s += user(q)
-    s += assistant("<think>\n</think>" + gen("NotThink"))
+    if mode == "NotThink":
+        if choices is not None:
+            s += assistant(
+                "<think>\n</think>"
+                + gen(mode)
+                + "So the answer is "
+                + select(name=f"{mode}-choice", choices=choices, temperature=0.0)
+            )
+        else:
+            s += assistant("<think>\n</think>" + gen(mode))
+    elif mode == "Think":
+        if choices is not None:
+            s += assistant(
+                "<think>"
+                + gen(mode)
+                + "So the answer is "
+                + select(name=f"{mode}-choice", choices=choices, temperature=0.0)
+            )
+        else:
+            s += assistant("<think>" + gen(mode))
+    elif mode == "ThinkOver":
+        if choices is not None:
+            s += assistant(
+                "<think>I have thought about the problem over</think>"
+                + gen(mode)
+                + "So the answer is "
+                + select(name=f"{mode}-choice", choices=choices, temperature=0.0)
+            )
+        else:
+            s += assistant(
+                "<think>I have thought about the problem over</think>" + gen(mode)
+            )
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
 
 
 # SGLang as a backend
@@ -261,27 +294,51 @@ def run_sglang(args, dataset) -> List[Result]:
             )
         )
 
-        # BUG (there is deadlock when using sglang to hack deepseek-r1)
+        # BUG (there is a deadlock when using sglang to hack deepseek-r1)
         # TODO: fix it
         for batch_idx in tqdm(range(num_batches), desc="Running SGLang"):
             start_idx = batch_idx * args.batch_size
             end_idx = min(start_idx + args.batch_size, len(dataset))
-            states = sgl_hack_deepseek_r1.run_batch(
-                [{"q": dataset[i]["question"]} for i in range(start_idx, end_idx)],
-                # max_new_tokens=args.max_tokens, # can not be set due to api_spec_tokens
-            )
-            for i, state in enumerate(states):
-                print(state.get_meta_info("NotThink"))
-                data.append(
-                    {
-                        "question": dataset[start_idx + i]["question"],
-                        "answer": dataset[start_idx + i]["answer"],
-                        "NotThink-text": state.text(),
-                        "NotThink": state["NotThink"],
-                    }
-                )
-            return data, counts
 
+            batch_results = [
+                Result(
+                    question=dataset[i]["question"],
+                    answer=dataset[i]["answer"],
+                )
+                for i in range(start_idx, end_idx)
+            ]
+            for mode in categories:
+                for _ in range(args.num_samples):
+                    # run multiple times for each question
+                    if args.dataset == "gpqa-diamond":
+                        choices = choices
+                    else:
+                        choices = None
+                    states = sgl_hack_deepseek_r1.run_batch(
+                        [
+                            {
+                                "q": (
+                                    dataset[i]["question"] + "\n" + math_prompt
+                                    if args.dataset
+                                    in ["Maxwell-Jia/AIME_2024", "openai/gsm8k"]
+                                    else dataset[i]["question"]
+                                ),
+                                "mode": mode,
+                                "choices": choices,
+                            }
+                            for i in range(start_idx, end_idx)
+                        ],
+                    )
+                    for i, state in enumerate(states):
+                        batch_results[i].outputs[mode].append(state[mode])
+                        batch_results[i].completion_tokens[mode].append(
+                            state.get_meta_info(mode)["completion_tokens"]
+                        )
+                        if args.dataset == "gpqa-diamond":
+                            batch_results[i].outputs[f"{mode}-choice"].append(
+                                state[f"{mode}-choice"]
+                            )
+            results.extend(batch_results)
     else:
         # run sglang on local model
         set_default_backend(
@@ -332,7 +389,7 @@ def run_sglang(args, dataset) -> List[Result]:
                             )
 
             results.extend(batch_results)
-        return results
+    return results
 
 
 # DeepSeek API as a backend
@@ -448,11 +505,12 @@ if __name__ == "__main__":
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument(
-        "--max-tokens", type=int, default=32000, help="Max tokens to generate"
+        "--max-tokens", type=int, default=32768, help="Max tokens to generate"
     )
     parser.add_argument("--batch-size", type=int, default=128, help="Batch size")
     parser.add_argument("--tp-size", type=int, default=1, help="TP size")
     parser.add_argument("--dp-size", type=int, default=1, help="DP size")
+    parser.add_argument("--top-p", type=float, default=0.95, help="top p size")
     parser.add_argument(
         "--max_workers",
         type=int,
@@ -462,7 +520,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num-samples",
         type=int,
-        default=5,
+        default=16,
         help="Number of samples for each question",
     )
 
