@@ -2,9 +2,12 @@ import argparse
 import json
 import logging
 import os
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from functools import partial
+from typing import DefaultDict, List
 
 from datasets import load_dataset
 from sglang import Runtime, assistant, function, gen, select, set_default_backend, user
@@ -17,12 +20,36 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
+
+@dataclass
+class Result:
+    question: str
+    answer: str
+    outputs: DefaultDict[str, list[str]] = field(
+        default_factory=lambda: defaultdict(list)
+    )
+    completion_tokens: DefaultDict[str, list[int]] = field(
+        default_factory=lambda: defaultdict(list)
+    )
+
+
+def serialize_results(results: list[Result]) -> list[dict]:
+    def convert_defaultdict(d):
+        return {k: v for k, v in d.items()}
+
+    converted = []
+    for r in results:
+        d = asdict(r)
+        d["outputs"] = convert_defaultdict(d["outputs"])
+        d["completion_tokens"] = convert_defaultdict(d["completion_tokens"])
+        converted.append(d)
+    return converted
+
+
 deepseek_models = ["deepseek-chat", "deepseek-reasoner"]
 
 categories = ["Think", "ThinkOver", "NotThink"]
-math_prompt = (
-    "Please reason step by step, and put your final answer within \\boxed\{\}."
-)
+math_prompt = r"Please reason step by step, and put your final answer within \boxed{}."
 
 
 def get_ds_api_completion_response(item, client, args) -> tuple[str, int]:
@@ -64,10 +91,10 @@ def map_tokenizer(item, tokenizer):
     return item
 
 
-#################  GSM8K ###############################
+################# GSM8K BEGIN ###############################
 @function
 def gsm_qa(s, item):
-    s += user(item["question"])
+    s += user(item["question"] + "\n" + math_prompt)
     forks = s.fork(len(categories))
     for name, fork in zip(categories, forks):
         if name == "Think":
@@ -90,10 +117,12 @@ def gsm_qa(s, item):
             'prompt_tokens': 115}
         """
         s[f"{name}-counts"] = fork.get_meta_info(name)["completion_tokens"]
-        s[f"{name}-text"] = fork.text()
+        # s[f"{name}-text"] = fork.text()
 
 
-################## GPQA DIAMOND ############################
+################# GSM8K END ###############################
+
+################## GPQA DIAMOND BEGIN ############################
 gpqa_prompt_template = """What is the correct answer to this question:{Question}
 Choices:
 (A) {choice1}
@@ -167,6 +196,41 @@ def gpqa_diamond_qa(s, item):
         s[f"{name}-text"] = fork.text()  # store full text (contain special tokens)
 
 
+################## GPQA DIAMOND END ############################
+
+
+################## AIME 2024 BEGIN ############################
+def aime_map_function(item):
+    item["question"] = item["Problem"]
+    item["answer"] = item["Answer"]
+    return item
+
+
+@function
+def aime_qa(s, item):
+    s += user(item["question"] + "\n" + math_prompt)
+    forks = s.fork(len(categories))
+    for name, fork in zip(categories, forks):
+        if name == "Think":
+            fork += assistant("<think>" + gen(name))
+        elif name == "ThinkOver":
+            fork += assistant(
+                "<think>I have thought about the problem over</think>" + gen(name)
+            )
+        elif name == "NotThink":
+            fork += assistant("<think>\n</think>" + gen(name))
+        else:
+            raise ValueError(f"Unknown category: {name}")
+        s[name] = fork[name]
+        s[f"{name}-counts"] = fork.get_meta_info(name)[
+            "completion_tokens"
+        ]  # store completion tokens
+        # s[f"{name}-text"] = fork.text()  # store full text (contain special tokens)
+
+
+################## AIME 2024 END ############################
+
+
 @function(num_api_spec_tokens=128)
 def sgl_hack_deepseek_r1(s, q):
     s += user(q)
@@ -174,7 +238,7 @@ def sgl_hack_deepseek_r1(s, q):
 
 
 # SGLang as a backend
-def run_sglang(args, dataset):
+def run_sglang(args, dataset) -> List[Result]:
     logging.info(
         f"Running SGLang with {args.model_path} and {args.batch_size} batch size"
     )
@@ -182,8 +246,7 @@ def run_sglang(args, dataset):
     num_batches = (len(dataset) + args.batch_size - 1) // args.batch_size
 
     # used to save results
-    data = []
-    counts = {name: [] for name in categories}
+    results = []
 
     if args.model_path in deepseek_models:
         # use sgl-hack-deepseek-r1
@@ -226,50 +289,54 @@ def run_sglang(args, dataset):
                 model_path=args.model_path, tp_size=args.tp_size, dp_size=args.dp_size
             )
         )
+        if args.dataset == "openai/gsm8k":
+            func = gsm_qa
+        elif args.dataset == "gpqa-diamond":
+            func = gpqa_diamond_qa
+        elif args.dataset == "Maxwell-Jia/AIME_2024":
+            func = aime_qa
+        else:
+            raise ValueError(f"Dataset {args.dataset} not supported")
+
         for cur_batch in tqdm(range(num_batches), desc="Running SGLang"):
             start_idx = cur_batch * args.batch_size
             end_idx = min(start_idx + args.batch_size, len(dataset))
 
-            if args.dataset == "openai/gsm8k":
-                func = gsm_qa
-            elif args.dataset == "gpqa-diamond":
-                func = gpqa_diamond_qa
-            else:
-                raise ValueError(f"Dataset {args.dataset} not supported")
+            batch_results = [
+                Result(
+                    question=dataset[i]["question"],
+                    answer=dataset[i]["answer"],
+                )
+                for i in range(start_idx, end_idx)
+            ]
 
-            states = func.run_batch(
-                [{"item": dataset[i]} for i in range(start_idx, end_idx)],
-                max_new_tokens=args.max_tokens,
-            )
+            for _ in range(args.num_samples):  # run multiple times for each question
+                states = func.run_batch(
+                    [{"item": dataset[i]} for i in range(start_idx, end_idx)],
+                    max_new_tokens=args.max_tokens,
+                )
+                for i, state in enumerate(states):
+                    for name in categories:
+                        batch_results[i].outputs[name].append(
+                            state[name]
+                        )  # save completion text
+                        # batch_results[i].outputs[f"{name}-text"].append(state[f"{name}-text"]) # save full text
+                        batch_results[i].completion_tokens[name].append(
+                            state[f"{name}-counts"]
+                        )  # save completion tokens
+                        if (
+                            args.dataset == "gpqa-diamond"
+                        ):  # for gpqa-diamond, we need to save choice text
+                            batch_results[i].outputs[f"{name}-choice"].append(
+                                state[f"{name}-choice"]
+                            )
 
-            for i, state in enumerate(states):
-                item = {
-                    "question": dataset[start_idx + i]["question"],
-                    "answer": dataset[start_idx + i]["answer"],
-                }
-                for name in categories:
-                    # save full text and completion text
-                    item[f"{name}-text"] = state[f"{name}-text"]
-                    item[name] = state[name]
-                    if args.dataset == "gpqa-diamond":
-                        # for gpqa-diamond, we need to save choice text
-                        item[f"{name}-choice"] = state[f"{name}-choice"]
-                data.append(item)
-
-                # save counts
-                for name in categories:
-                    counts[name].append(state[f"{name}-counts"])
-
-        for name in categories:
-            # recompute counts (mean, ...)
-            counts[f"{name}-MEAN(tokens)"] = sum(counts[name]) / len(counts[name])
-            del counts[name]
-
-        return data, counts
+            results.extend(batch_results)
+        return results
 
 
 # DeepSeek API as a backend
-def run_deepseek_api(args, dataset):
+def run_deepseek_api(args, dataset) -> List[Result]:
     from openai import OpenAI
 
     client = OpenAI(
@@ -319,6 +386,9 @@ def main(args):
             split="train",
         )
         dataset = dataset.map(gpqa_diamond_map_function, batched=False)
+    elif args.dataset == "Maxwell-Jia/AIME_2024":
+        dataset = load_dataset(args.dataset, split="train")
+        dataset = dataset.map(aime_map_function, batched=False)
     else:
         raise ValueError(f"Dataset {args.dataset} not supported")
 
@@ -347,7 +417,7 @@ def main(args):
         logging.info("-" * 100)
         data, count = run_deepseek_api(args, dataset)
     elif args.backend == "sglang":
-        data, count = run_sglang(args, dataset)
+        results = run_sglang(args, dataset)
     else:
         raise ValueError(f"Backend {args.backend} not supported")
 
@@ -356,15 +426,7 @@ def main(args):
         f"results/{args.backend}_{model_name}_{dataset_name}_{datetime.now().strftime('%02m%02d')}.json",
         "w",
     ) as f:
-        json.dump(
-            {
-                "count": count,
-                "data": data,
-            },
-            f,
-            indent=4,
-            ensure_ascii=False,
-        )
+        json.dump(serialize_results(results), f, indent=4, ensure_ascii=False)
 
 
 if __name__ == "__main__":
@@ -381,7 +443,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset",
         type=str,
-        choices=["openai/gsm8k", "gpqa-diamond"],
+        choices=["openai/gsm8k", "gpqa-diamond", "Maxwell-Jia/AIME_2024"],
         help="Dataset to use",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
@@ -397,6 +459,13 @@ if __name__ == "__main__":
         default=5,
         help="Only used for ds-api in concurrent mode",
     )
+    parser.add_argument(
+        "--num-samples",
+        type=int,
+        default=5,
+        help="Number of samples for each question",
+    )
 
     args = parser.parse_args()
+    print(args)
     main(args)
