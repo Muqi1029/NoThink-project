@@ -27,10 +27,16 @@ class Result:
     answer: str
     outputs: DefaultDict[str, list[str]] = field(
         default_factory=lambda: defaultdict(list)
-    )
+    )  # save completion text
     completion_tokens: DefaultDict[str, list[int]] = field(
         default_factory=lambda: defaultdict(list)
-    )
+    )  # save completion tokens
+    text: DefaultDict[str, list[str]] = field(
+        default_factory=lambda: defaultdict(list)
+    )  # save context
+    choices: DefaultDict[str, list[str]] = field(
+        default_factory=lambda: defaultdict(list)
+    )  # used for gpqa-diamond
 
 
 def serialize_results(results: list[Result]) -> list[dict]:
@@ -42,6 +48,8 @@ def serialize_results(results: list[Result]) -> list[dict]:
         d = asdict(r)
         d["outputs"] = convert_defaultdict(d["outputs"])
         d["completion_tokens"] = convert_defaultdict(d["completion_tokens"])
+        d["text"] = convert_defaultdict(d["text"])
+        d["choices"] = convert_defaultdict(d["choices"])
         converted.append(d)
     return converted
 
@@ -208,11 +216,11 @@ def aime_map_function(item):
 
 @function
 def aime_qa(s, item):
-    s += user(item["question"] + "\n" + math_prompt)
+    s += user(f"Problem: {item['question']}\n{math_prompt}")
     forks = s.fork(len(categories))
     for name, fork in zip(categories, forks):
         if name == "Think":
-            fork += assistant("<think>" + gen(name))
+            fork += assistant("<think>\n" + gen(name))
         elif name == "ThinkOver":
             fork += assistant(
                 "<think>I have thought about the problem over</think>" + gen(name)
@@ -225,7 +233,7 @@ def aime_qa(s, item):
         s[f"{name}-counts"] = fork.get_meta_info(name)[
             "completion_tokens"
         ]  # store completion tokens
-        # s[f"{name}-text"] = fork.text()  # store full text (contain special tokens)
+        s[f"{name}-text"] = fork.text()  # store full text (contain special tokens)
 
 
 ################## AIME 2024 END ############################
@@ -377,14 +385,16 @@ def run_sglang(args, dataset) -> List[Result]:
                         batch_results[i].outputs[name].append(
                             state[name]
                         )  # save completion text
-                        # batch_results[i].outputs[f"{name}-text"].append(state[f"{name}-text"]) # save full text
                         batch_results[i].completion_tokens[name].append(
                             state[f"{name}-counts"]
                         )  # save completion tokens
+                        batch_results[i].text[name].append(
+                            state[f"{name}-text"]
+                        )  # save full text
                         if (
                             args.dataset == "gpqa-diamond"
                         ):  # for gpqa-diamond, we need to save choice text
-                            batch_results[i].outputs[f"{name}-choice"].append(
+                            batch_results[i].choices[name].append(
                                 state[f"{name}-choice"]
                             )
 
@@ -450,8 +460,8 @@ def main(args):
         raise ValueError(f"Dataset {args.dataset} not supported")
 
     if args.debug:
-        logging.info(f"Debug mode, only use 5 examples for testing")
-        dataset = dataset.select(range(5))
+        logging.info(f"Debug mode, only use 4 examples for testing")
+        dataset = dataset.select(range(4))
 
     model_name = args.model_path.split("/")[-1]
     dataset_name = args.dataset.split("/")[-1]
@@ -479,10 +489,12 @@ def main(args):
         raise ValueError(f"Backend {args.backend} not supported")
 
     os.makedirs("results", exist_ok=True)
-    with open(
-        f"results/{args.backend}_{model_name}_{dataset_name}_{datetime.now().strftime('%02m%02d')}.json",
-        "w",
-    ) as f:
+    file_name = (
+        f"{args.backend}_{model_name}_{dataset_name}_{datetime.now().strftime('%02m%02d')}.json"
+        if not args.debug
+        else f"{args.backend}-debug_{model_name}_{dataset_name}_{datetime.now().strftime('%02m%02d')}.json"
+    )
+    with open(f"results/{file_name}", "w") as f:
         json.dump(serialize_results(results), f, indent=4, ensure_ascii=False)
 
 
