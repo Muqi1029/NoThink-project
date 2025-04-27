@@ -40,16 +40,16 @@ class Result:
 
 
 def serialize_results(results: list[Result]) -> list[dict]:
-    def convert_defaultdict(d):
-        return {k: v for k, v in d.items()}
-
     converted = []
     for r in results:
-        d = asdict(r)
-        d["outputs"] = convert_defaultdict(d["outputs"])
-        d["completion_tokens"] = convert_defaultdict(d["completion_tokens"])
-        d["text"] = convert_defaultdict(d["text"])
-        d["choices"] = convert_defaultdict(d["choices"])
+        d = {
+            "question": r.question,
+            "answer": r.answer,
+            "outputs": dict(r.outputs),
+            "completion_tokens": dict(r.completion_tokens),
+            "text": dict(r.text),
+            "choices": dict(r.choices),
+        }
         converted.append(d)
     return converted
 
