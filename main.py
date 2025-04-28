@@ -460,8 +460,8 @@ def main(args):
         raise ValueError(f"Dataset {args.dataset} not supported")
 
     if args.debug:
-        logging.info(f"Debug mode, only use 4 examples for testing")
-        dataset = dataset.select(range(4))
+        logging.info(f"Debug mode, only use {args.debug_size} examples for testing")
+        dataset = dataset.select(range(args.debug_size))
 
     model_name = args.model_path.split("/")[-1]
     dataset_name = args.dataset.split("/")[-1]
@@ -482,6 +482,7 @@ def main(args):
         logging.info(dataset["question"][:3])
         logging.info(dataset["chat_question"][:3])
         logging.info("-" * 100)
+        # TODO: support deepseek-api
         data, count = run_deepseek_api(args, dataset)
     elif args.backend == "sglang":
         results = run_sglang(args, dataset)
@@ -516,6 +517,7 @@ if __name__ == "__main__":
         help="Dataset to use",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument("--debug-size", type=int, default=4, help="Debug size")
     parser.add_argument(
         "--max-tokens", type=int, default=32768, help="Max tokens to generate"
     )

@@ -78,30 +78,29 @@ def eval_pass_at_k(
         else:
             raise ValueError(f"Invalid dataset name: {dataset_name}")
 
-        # compute pass@k for each category
-        for category, l in result_item["outputs"].items():
-            if dataset_name == "gpqa-diamond":
-                if not category.endswith("-choice"):
-                    continue
-                else:
-                    # remove "-choice" from category for metrics key
-                    category = category.replace("-choice", "")
-
+        if dataset_name in ["gsm8k", "AIME_2024"]:
             with ThreadPoolExecutor(max_workers=20) as executor:
-                if dataset_name == "gpqa-diamond":
+                futures = [
+                    executor.submit(parallel_eval, ground_truth, pred)
+                    for pred in result_item["outputs"]["answer"]
+                ]
+                is_correct_results = [future.result() for future in futures]
+                pass_at_k = [compute_pass_at_k(is_correct_results, k) for k in ks]
+                metrics["answer"].pass_at_k.append(pass_at_k)
+        elif dataset_name == "gpqa-diamond":
+            for category, l in result_item["choices"].items():
+                with ThreadPoolExecutor(max_workers=20) as executor:
                     futures = [
                         executor.submit(
                             lambda x, y: str(x) == str(y), ground_truth, pred
                         )
                         for pred in l
                     ]
-                else:
-                    futures = [
-                        executor.submit(parallel_eval, ground_truth, pred) for pred in l
-                    ]
-                is_correct_results = [future.result() for future in futures]
-                pass_at_k = [compute_pass_at_k(is_correct_results, k) for k in ks]
-                metrics[category].pass_at_k.append(pass_at_k)
+                    is_correct_results = [future.result() for future in futures]
+                    pass_at_k = [compute_pass_at_k(is_correct_results, k) for k in ks]
+                    metrics[category].pass_at_k.append(pass_at_k)
+        else:
+            raise ValueError(f"Invalid dataset name: {dataset_name}")
 
         # compute completion tokens for each category
         for category, l in result_item["completion_tokens"].items():
