@@ -375,28 +375,30 @@ def run_sglang(args, dataset) -> List[Result]:
                 for i in range(start_idx, end_idx)
             ]
 
-            for _ in range(args.num_samples):  # run multiple times for each question
-                states = func.run_batch(
-                    [{"item": dataset[i]} for i in range(start_idx, end_idx)],
-                    max_new_tokens=args.max_tokens,
-                )
-                for i, state in enumerate(states):
-                    for name in categories:
-                        batch_results[i].outputs[name].append(
-                            state[name]
-                        )  # save completion text
-                        batch_results[i].completion_tokens[name].append(
-                            state[f"{name}-counts"]
-                        )  # save completion tokens
-                        batch_results[i].text[name].append(
-                            state[f"{name}-text"]
-                        )  # save full text
-                        if (
-                            args.dataset == "gpqa-diamond"
-                        ):  # for gpqa-diamond, we need to save choice text
-                            batch_results[i].choices[name].append(
-                                state[f"{name}-choice"]
-                            )
+            states = func.run_batch(
+                [
+                    {"item": dataset[i]}
+                    for i in range(start_idx, end_idx)
+                    for _ in range(args.num_samples)
+                ],
+                max_new_tokens=args.max_tokens,
+            )
+            for i, state in enumerate(states):
+                idx = i // args.num_samples
+                for name in categories:
+                    batch_results[idx].outputs[name].append(
+                        state[name]
+                    )  # save completion text
+                    batch_results[idx].completion_tokens[name].append(
+                        state[f"{name}-counts"]
+                    )  # save completion tokens
+                    batch_results[idx].text[name].append(
+                        state[f"{name}-text"]
+                    )  # save full text
+                    if (
+                        args.dataset == "gpqa-diamond"
+                    ):  # for gpqa-diamond, we need to save choice text
+                        batch_results[idx].choices[name].append(state[f"{name}-choice"])
 
             results.extend(batch_results)
     return results
