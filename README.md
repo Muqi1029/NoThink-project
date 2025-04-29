@@ -72,8 +72,8 @@ Objectives:
 
 | Model | Category | MEAN(pass@1) | MEAN(pass@5) | MEAN(tokens) |
 | --- | --- | --- | --- | --- |
-| DeepSeek-R1-Distill-Qwen-7B | Think | 0.4600 | 0.6857 | 9934.0333 |
-| DeepSeek-R1-Distill-Qwen-7B | ThinkOver | 0.4267 | 0.6878 | 9963.3867 |
-| DeepSeek-R1-Distill-Qwen-7B | NotThink | 0.2133 | 0.5185 | 3664.4733 |
+| DeepSeek-R1-Distill-Qwen-7B | Think | 0.4708 | 0.6999 | 10057.3708 |
+| DeepSeek-R1-Distill-Qwen-7B | ThinkOver | 0.4500 | 0.6753 | 10023.1625 |
+| DeepSeek-R1-Distill-Qwen-7B | NotThink | 0.2583 | 0.5653 | 4774.5542 |
 
 -- --
