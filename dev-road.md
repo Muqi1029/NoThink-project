@@ -29,7 +29,7 @@ Assuming we have 3 samples, the result structure is as follows:
         "Think": [100, 200, 300],
         "ThinkOver": [100, 200, 300]
     },
-	
+
 
 }
 ```
