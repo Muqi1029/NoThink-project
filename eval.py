@@ -1,18 +1,15 @@
 import json
 import math
 import re
-import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from glob import glob
 from typing import Dict, List
 
-sys.path.append("/wangbenyou/wanlong/SFT/eval")
 import numpy as np
-from utils.grader import check_is_correct
-from utils.parser import extract_answer
 
 from main import categories
+from utils import check_is_correct, extract_answer
 
 
 @dataclass
@@ -35,7 +32,6 @@ def check_args(dataset, f_path):
 def parallel_eval(ground_truth: str, pred: str) -> bool:
     # print(check_is_correct(extract_answer(pred), ground_truth, dataset="math"))
     return check_is_correct(extract_answer(pred), ground_truth, dataset="math")
-    return extract_answer(pred) == str(ground_truth)
 
 
 def compute_pass_at_k(is_correct_results: List[bool], k: int) -> float:
@@ -79,14 +75,14 @@ def eval_pass_at_k(
             raise ValueError(f"Invalid dataset name: {dataset_name}")
 
         if dataset_name in ["gsm8k", "AIME_2024"]:
-            with ThreadPoolExecutor(max_workers=20) as executor:
-                futures = [
-                    executor.submit(parallel_eval, ground_truth, pred)
-                    for pred in result_item["outputs"]["answer"]
-                ]
-                is_correct_results = [future.result() for future in futures]
-                pass_at_k = [compute_pass_at_k(is_correct_results, k) for k in ks]
-                metrics["answer"].pass_at_k.append(pass_at_k)
+            for category, l in result_item["outputs"].items():
+                with ThreadPoolExecutor(max_workers=20) as executor:
+                    futures = [
+                        executor.submit(parallel_eval, ground_truth, pred) for pred in l
+                    ]
+                    is_correct_results = [future.result() for future in futures]
+                    pass_at_k = [compute_pass_at_k(is_correct_results, k) for k in ks]
+                    metrics[category].pass_at_k.append(pass_at_k)
         elif dataset_name == "gpqa-diamond":
             for category, l in result_item["choices"].items():
                 with ThreadPoolExecutor(max_workers=20) as executor:
@@ -122,8 +118,10 @@ def eval_pass_at_k(
 
 
 def main():
-    # datasets = ["gsm8k", "gpqa-diamond", "AIME_2024"]
-    datasets = ["gsm8k", "AIME_2024"]
+    datasets = ["gsm8k", "gpqa-diamond", "AIME_2024"]
+    # datasets = ["gpqa-diamond"]
+    # datasets = ["gsm8k", "AIME_2024"]
+    datasets = ["AIME_2024"]
     ks = [1, 5]
     model_name = "DeepSeek-R1-Distill-Qwen-7B"
 
