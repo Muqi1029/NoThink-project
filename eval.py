@@ -11,6 +11,20 @@ import numpy as np
 from main import categories
 from utils import check_is_correct, extract_answer
 
+invalid_counts = 0
+
+
+def check_is_correct_v2(pred: str, ground_truth: str) -> bool:
+    global invalid_counts
+    # extract the answer from the boxed
+    match = re.search(r"boxed\{(.*)\}", pred)
+    if match:
+        pred = match.group(1)
+    else:
+        print(f"Invalid prediction: {pred}")
+        invalid_counts += 1
+    return str(pred) == str(ground_truth)
+
 
 @dataclass
 class EvalMetric:
@@ -31,7 +45,8 @@ def check_args(dataset, f_path):
 
 def parallel_eval(ground_truth: str, pred: str) -> bool:
     # print(check_is_correct(extract_answer(pred), ground_truth, dataset="math"))
-    return check_is_correct(extract_answer(pred), ground_truth, dataset="math")
+    # return check_is_correct(extract_answer(pred), ground_truth, dataset="math")
+    return check_is_correct_v2(pred, ground_truth)
 
 
 def compute_pass_at_k(is_correct_results: List[bool], k: int) -> float:
@@ -58,6 +73,7 @@ def eval_pass_at_k(
             dataset = json.load(f)
 
     num_samples = len(dataset[0]["outputs"][categories[0]])
+    print(f"Number of samples totally: {num_samples}")
     if any(k > num_samples for k in ks):
         raise ValueError(
             f"k is greater than the number of samples: {num_samples}, k={ks}"
@@ -122,7 +138,7 @@ def main():
     # datasets = ["gpqa-diamond"]
     # datasets = ["gsm8k", "AIME_2024"]
     datasets = ["AIME_2024"]
-    ks = [1, 5]
+    ks = [1, 64]
     model_name = "DeepSeek-R1-Distill-Qwen-7B"
 
     for dataset_name in datasets:
@@ -161,6 +177,7 @@ def main():
                 + " |\n"
             )
         print(table)
+        print(f"Invalid counts: {invalid_counts}")
 
 
 if __name__ == "__main__":

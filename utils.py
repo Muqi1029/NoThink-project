@@ -1,14 +1,14 @@
-import re
 import multiprocessing
-from word2number import w2n
-import regex
-from typing import Union
+import re
 from math import isclose
+from typing import Union
 
-from sympy import simplify, N
-from sympy.parsing.sympy_parser import parse_expr
-from sympy.parsing.latex import parse_latex
+import regex
 from latex2sympy2 import latex2sympy
+from sympy import N, simplify
+from sympy.parsing.latex import parse_latex
+from sympy.parsing.sympy_parser import parse_expr
+from word2number import w2n
 
 # units mainly from MathQA
 unit_texts = [
