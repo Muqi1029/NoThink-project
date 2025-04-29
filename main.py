@@ -4,7 +4,7 @@ import logging
 import os
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 from functools import partial
 from typing import DefaultDict, List
@@ -226,7 +226,7 @@ def aime_qa(s, item):
                 "<think>I have thought about the problem over</think>" + gen(name)
             )
         elif name == "NotThink":
-            fork += assistant("<think>\n</think>" + gen(name))
+            fork += assistant("<think>\n\n</think>" + gen(name))
         else:
             raise ValueError(f"Unknown category: {name}")
         s[name] = fork[name]
@@ -336,6 +336,9 @@ def run_sglang(args, dataset) -> List[Result]:
                             }
                             for i in range(start_idx, end_idx)
                         ],
+                        temperature=args.temperature,
+                        top_p=args.top_p,
+                        max_new_tokens=args.max_tokens,
                     )
                     for i, state in enumerate(states):
                         batch_results[i].outputs[mode].append(state[mode])
@@ -351,7 +354,10 @@ def run_sglang(args, dataset) -> List[Result]:
         # run sglang on local model
         set_default_backend(
             Runtime(
-                model_path=args.model_path, tp_size=args.tp_size, dp_size=args.dp_size
+                model_path=args.model_path,
+                tp_size=args.tp_size,
+                dp_size=args.dp_size,
+                mem_fraction_static=args.mem_fraction_static,
             )
         )
         if args.dataset == "openai/gsm8k":
@@ -382,6 +388,8 @@ def run_sglang(args, dataset) -> List[Result]:
                     for _ in range(args.num_samples)
                 ],
                 max_new_tokens=args.max_tokens,
+                temperature=args.temperature,
+                top_p=args.top_p,
             )
             for i, state in enumerate(states):
                 idx = i // args.num_samples
@@ -527,6 +535,14 @@ if __name__ == "__main__":
     parser.add_argument("--tp-size", type=int, default=1, help="TP size")
     parser.add_argument("--dp-size", type=int, default=1, help="DP size")
     parser.add_argument("--top-p", type=float, default=0.95, help="top p size")
+    parser.add_argument("--temperature", type=float, default=0.6, help="temperature")
+    parser.add_argument(
+        "--mem-fraction-static",
+        type=float,
+        default=0.8,
+        help="Memory fraction for static mode",
+    )
+
     parser.add_argument(
         "--max_workers",
         type=int,
