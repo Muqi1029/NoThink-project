@@ -45,7 +45,7 @@ Objectives:
 
 > settings:
 >
-> - `max_tokens`: 32,000
+> - `max_tokens`: 32,768
 > - `temperature`: default (In terms of DeepSeek-R1-Distill-Qwen-7B, it's set as 0.6)
 
 ## GSM8k (free-form QA)
@@ -70,10 +70,10 @@ Objectives:
 
 ## AIME
 
-| Model | Category | MEAN(pass@1) | MEAN(pass@5) | MEAN(tokens) |
+| Model | Category | MEAN(pass@1) | MEAN(pass@64) | MEAN(tokens) |
 | --- | --- | --- | --- | --- |
-| DeepSeek-R1-Distill-Qwen-7B | Think | 0.4708 | 0.6999 | 10057.3708 |
-| DeepSeek-R1-Distill-Qwen-7B | ThinkOver | 0.4500 | 0.6753 | 10023.1625 |
-| DeepSeek-R1-Distill-Qwen-7B | NotThink | 0.2583 | 0.5653 | 4774.5542 |
+| DeepSeek-R1-Distill-Qwen-7B | Think | 0.5302 | 0.8667 | 13257.8672 |
+| DeepSeek-R1-Distill-Qwen-7B | ThinkOver | 0.5234 | 0.8333 | 13166.6865 |
+| DeepSeek-R1-Distill-Qwen-7B | NotThink | 0.2359 | 0.8333 | 3937.9078 |
 
 -- --
