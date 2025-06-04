@@ -101,10 +101,10 @@ def map_tokenizer(item, tokenizer):
 
 ################# GSM8K BEGIN ###############################
 @function
-def gsm_qa(s, item):
+def gsm_qa(s, item, args):
     s += user(item["question"] + "\n" + math_prompt)
-    forks = s.fork(len(categories))
-    for name, fork in zip(categories, forks):
+    forks = s.fork(len(args.categories))
+    for name, fork in zip(args.categories, forks):
         if name == "Think":
             fork += assistant("<think>" + gen(name))
         elif name == "ThinkOver":
@@ -148,7 +148,7 @@ def gpqa_diamond_map_function(item):
 
 
 @function
-def gpqa_diamond_qa(s, item):
+def gpqa_diamond_qa(s, item, args):
     s += user(
         gpqa_prompt_template.format(
             Question=item["question"],
@@ -158,12 +158,12 @@ def gpqa_diamond_qa(s, item):
             choice4=item["choice4"],
         )
     )
-    forks = s.fork(len(categories))
-    for name, fork in zip(categories, forks):
+    forks = s.fork(len(args.categories))
+    for name, fork in zip(args.categories, forks):
         if name == "Think":
             fork += assistant(
-                "<think>"
-                + gen(name)
+                # "<think>"
+                gen(name)
                 + "So the answer is "
                 + select(
                     name=f"{name}-choice",
@@ -215,10 +215,10 @@ def aime_map_function(item):
 
 
 @function
-def aime_qa(s, item):
+def aime_qa(s, item, args):
     s += user(f"Problem: {item['question']}\n{math_prompt}")
-    forks = s.fork(len(categories))
-    for name, fork in zip(categories, forks):
+    forks = s.fork(len(args.categories))
+    for name, fork in zip(args.categories, forks):
         if name == "Think":
             fork += assistant("<think>\n" + gen(name))
         elif name == "ThinkOver":
@@ -303,7 +303,7 @@ def run_sglang(args, dataset) -> List[Result]:
         )
 
         # BUG (there is a deadlock when using sglang to hack deepseek-r1)
-        # TODO: fix it
+        # FIXME
         for batch_idx in tqdm(range(num_batches), desc="Running SGLang"):
             start_idx = batch_idx * args.batch_size
             end_idx = min(start_idx + args.batch_size, len(dataset))
@@ -366,8 +366,6 @@ def run_sglang(args, dataset) -> List[Result]:
             func = gpqa_diamond_qa
         elif args.dataset == "Maxwell-Jia/AIME_2024":
             func = aime_qa
-        else:
-            raise ValueError(f"Dataset {args.dataset} not supported")
 
         for cur_batch in tqdm(range(num_batches), desc="Running SGLang"):
             start_idx = cur_batch * args.batch_size
@@ -383,7 +381,7 @@ def run_sglang(args, dataset) -> List[Result]:
 
             states = func.run_batch(
                 [
-                    {"item": dataset[i]}
+                    {"item": dataset[i], "args": args}
                     for i in range(start_idx, end_idx)
                     for _ in range(args.num_samples)
                 ],
@@ -393,7 +391,7 @@ def run_sglang(args, dataset) -> List[Result]:
             )
             for i, state in enumerate(states):
                 idx = i // args.num_samples
-                for name in categories:
+                for name in args.categories:
                     batch_results[idx].outputs[name].append(
                         state[name]
                     )  # save completion text
@@ -496,8 +494,6 @@ def main(args):
         data, count = run_deepseek_api(args, dataset)
     elif args.backend == "sglang":
         results = run_sglang(args, dataset)
-    else:
-        raise ValueError(f"Backend {args.backend} not supported")
 
     os.makedirs("results", exist_ok=True)
     file_name = (
@@ -529,7 +525,7 @@ if __name__ == "__main__":
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument("--debug-size", type=int, default=4, help="Debug size")
     parser.add_argument(
-        "--max-tokens", type=int, default=32768, help="Max tokens to generate"
+        "--max-tokens", type=int, default=20000, help="Max tokens to generate"
     )
     parser.add_argument("--batch-size", type=int, default=128, help="Batch size")
     parser.add_argument("--tp-size", type=int, default=1, help="TP size")
@@ -541,6 +537,12 @@ if __name__ == "__main__":
         type=float,
         default=0.8,
         help="Memory fraction for static mode",
+    )
+    parser.add_argument(
+        "--categories",
+        nargs="+",
+        default=["Think", "ThinkOver", "NotThink"],
+        choices=["Think", "ThinkOver", "NotThink"],
     )
 
     parser.add_argument(

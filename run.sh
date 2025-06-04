@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 
-export CUDA_VISIBLE_DEVICES=6
+dataset=gpqa-diamond
+categories="Think" # "Think NoThink ThinkOver"
+
+
+export CUDA_VISIBLE_DEVICES=1
 python main.py \
-    --model-path DeepSeek-R1-Distill-Qwen-7B \
     --backend sglang \
-    --debug \
-    --dataset gpqa-diamond
+    --model-path Qwen/Qwen2.5-7B-Instruct \
+    --dataset ${dataset} \
+    --categories ${categories} \
+    --num-samples 1
